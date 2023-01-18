@@ -21,12 +21,15 @@ import NRSur7dq2
 from singleton_decorator import singleton
 import h5py
 from tqdm import tqdm
-import cPickle as pickle
+import pickle
 import multiprocessing, pathos.multiprocessing
 import precession
 import warnings
 import json
+import gwsurrogate as gws
 
+# Path to surrogate model
+# path_to_sur = '/home/ritesh/Surrogate/Surrogate_data/NRHybSur3dq8.h5'
 
 __author__ = "Davide Gerosa, Francois Hebert, Leo Stein"
 __email__ = "dgerosa@caltech.edu"
@@ -94,12 +97,13 @@ class surrogate(object):
         '''Placeholder'''
         self._sur=None
 
-    def sur(self):
+    def sur(self, path_to_sur):
         '''Load surrogate from file NRSur7dq2.h5.
         Usage: sur=surrkick.surrogate().sur()'''
 
         if self._sur==None:
-            self._sur= NRSur7dq2.NRSurrogate7dq2()
+            self._sur= gws.LoadSurrogate(path_to_sur)
+#             self._sur= NRSur7dq2.NRSurrogate7dq2()
             #self._sur = NRSur7dq2.NRSurrogate7dq2('NRSur7dq2.h5')
         return self._sur
 
@@ -114,10 +118,10 @@ class surrkick(object):
     - `t_ref`: reference time at which spins are specified (must be -4500<=t_ref<=-100)
     '''
 
-    def __init__(self,q=1,chi1=[0,0,0],chi2=[0,0,0],t_ref=-100):
+    def __init__(self,path_to_sur,q=1,chi1=[0,0,0],chi2=[0,0,0],dt=0.1,f_low=0.005):
         '''Initialize the `surrkick` class.'''
 
-        self.sur=surrogate().sur()
+        self.sur=surrogate().sur(path_to_sur)
         '''Initialize the surrogate. Note it's a singleton'''
 
         self.q = max(q,1/q)
@@ -132,17 +136,20 @@ class surrkick(object):
         '''Spin vector of the lighter BH.
         Usage: chi2=surrkick.surrkick().chi2'''
 
-        self.times = self.sur.t_coorb
-        '''Time nodes where quantities are evaluated.
-        Usage: times=surrkick.surrkick().times'''
+        self.dt = dt
+        '''timestrp'''
+        
+        self.f_low = f_low
+        '''Initial frequency'''
 
-        # Check the reference time makes sense
-        self.t_ref=t_ref
-        '''Reference time at which spins are specified (must be -4500<=t_ref<=-100).
-        Usage: t_ref=surrkick.surrkick().t_ref'''
-        assert self.t_ref>=-4500 and self.t_ref<=-100 # Check you're in the regions where spins are OK.
+#         # Check the reference time makes sense
+#         self.t_ref=t_ref
+#         '''Reference time at which spins are specified (must be -4500<=t_ref<=-100).
+#         Usage: t_ref=surrkick.surrkick().t_ref'''
+#         assert self.t_ref>=-4500 and self.t_ref<=-100 # Check you're in the regions where spins are OK.
 
         # Hidden variables for lazy loading
+        self._times = None
         self._hsample = None
         self._hdotsample = None
         self._lmax = None
@@ -201,16 +208,25 @@ class surrkick(object):
             return  ( l*(l+1) - m*(m+1) )**0.5
 
     @property
+    def times(self):
+        '''return times if not None. Else load time'''
+        
+        if self._times is None:
+            self._times, _, _ = self.sur(self.q, self.chi1, self.chi2, dt=self.dt, f_low=self.f_low)
+        
+        return self._times
+    
+    @property
     def hsample(self):
         '''Modes of the gravitational-wave strain h=hp-i*hc evaluated at the surrogate time nodes. Returns a dictiornary with keys (l,m).
         Usage: hsample=surrkick.surrkick().hsample; hsample[l,m]'''
 
         if self._hsample is None:
 
-            if self.t_ref==-4500: # This is the default value for NRSur7dq2, which wants a None
-                self._hsample = self.sur(self.q, self.chi1, self.chi2,t=self.times,t_ref=None)
-            else:
-                self._hsample = self.sur(self.q, self.chi1, self.chi2,t=self.times,t_ref=self.t_ref)
+#             if self.t_ref==-4500: # This is the default value for NRSur7dq2, which wants a None
+#                 self._hsample = self.sur(self.q, self.chi1, self.chi2, dt=self.dt, f_low=self.f_low)
+#             else:
+            _, self._hsample, _ = self.sur(self.q, self.chi1, self.chi2, dt=self.dt, f_low=self.f_low)
 
         # Returns a python dictionary with keys (l,m)
         return self._hsample
