@@ -220,6 +220,21 @@ class surrkick(object):
     def hsample(self):
         '''Modes of the gravitational-wave strain h=hp-i*hc evaluated at the surrogate time nodes. Returns a dictiornary with keys (l,m).
         Usage: hsample=surrkick.surrkick().hsample; hsample[l,m]'''
+        
+        def generate_negative_m_mode(h_dict):
+            ''' For m>0 positive modes hp_mode,hc_mode use h(l,-m) = (-1)^l h(l,m)^* to compute the m<0 mode.
+            See Eq. 78 of Kidder,Physical Review D 77, 044016 (2008), arXiv:0710.0614v1 [gr-qc].'''
+            
+            h_dict_all_modes = {}
+
+            for mode in h_dict.keys():
+                (l,m)=mode
+                # obtain postive m mode values
+                h_dict_all_modes[(l,m)] = h_dict[mode]
+                # calculate negative m mode
+                h_dict_all_modes[(l,-m)] = np.power(-1,l) * np.conjugate(h_dict[mode])
+
+            return h_dict_all_modes
 
         if self._hsample is None:
 
@@ -227,6 +242,21 @@ class surrkick(object):
 #                 self._hsample = self.sur(self.q, self.chi1, self.chi2, dt=self.dt, f_low=self.f_low)
 #             else:
             _, self._hsample, _ = self.sur(self.q, self.chi1, self.chi2, dt=self.dt, f_low=self.f_low)
+            
+            # Delete (lm) mode for which m=0 doesn't exist
+            modes_to_remove = []
+            for mode in self._hsample.keys():
+                l,m = mode
+                if (l,0) not in self._hsample.keys():
+                    modes_to_remove.append(mode)
+            for mode in modes_to_remove:
+                try:
+                    self._hsample.pop(mode)
+                except KeyError:
+                    raise f"{mode} doesn't exist."
+    
+            # m<0 modes
+            self._hsample = generate_negative_m_mode(self._hsample)
 
         # Returns a python dictionary with keys (l,m)
         return self._hsample
